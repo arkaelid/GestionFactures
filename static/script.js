@@ -1,3 +1,182 @@
+// Fonctions de génération de rapports
+window.generateSalesReport = async function() {
+    const startDate = document.getElementById('reportDateStart').value;
+    const endDate = document.getElementById('reportDateEnd').value;
+    const salesReport = document.getElementById('salesReport');
+
+    try {
+        // Charger les données nécessaires
+        const [invoicesResponse, productsResponse] = await Promise.all([
+            fetch('/api/invoices'),
+            fetch('/api/products')
+        ]);
+
+        const invoices = await invoicesResponse.json();
+        const products = await productsResponse.json();
+
+        // Filtrer les factures par date
+        const filteredInvoices = invoices.filter(invoice => {
+            const invoiceDate = parseFloat(invoice.invoice_date.toString().replace(',', '.'));
+            const start = startDate ? parseFloat(formatDateToExcel(startDate)) : 0;
+            const end = endDate ? parseFloat(formatDateToExcel(endDate)) : Infinity;
+            return invoiceDate >= start && invoiceDate <= end;
+        });
+
+        // Calculer les métriques
+        const totalSales = filteredInvoices.reduce((sum, inv) => sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
+        const averageOrderValue = totalSales / filteredInvoices.length || 0;
+        const totalOrders = filteredInvoices.length;
+
+        // Créer le rapport HTML
+        let reportHtml = `
+            <div class="report-metrics">
+                <div class="metric-card">
+                    <div class="metric-value">${totalSales.toFixed(2).replace('.', ',')} €</div>
+                    <div class="metric-label">Ventes Totales</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${totalOrders}</div>
+                    <div class="metric-label">Nombre de Commandes</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${averageOrderValue.toFixed(2).replace('.', ',')} €</div>
+                    <div class="metric-label">Panier Moyen</div>
+                </div>
+            </div>
+
+            <h3>Détails des Ventes</h3>
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>N° Facture</th>
+                        <th>Client ID</th>
+                        <th>Montant</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        filteredInvoices.forEach(invoice => {
+            reportHtml += `
+                <tr>
+                    <td>${formatDate(invoice.invoice_date)}</td>
+                    <td>${invoice.invoice_number}</td>
+                    <td>${invoice.client_id}</td>
+                    <td>${invoice.total_amount.toString().replace('.', ',')} €</td>
+                </tr>
+            `;
+        });
+
+        reportHtml += `
+                </tbody>
+            </table>
+        `;
+
+        salesReport.innerHTML = reportHtml;
+    } catch (error) {
+        console.error('Erreur lors de la génération du rapport:', error);
+        showError('Erreur lors de la génération du rapport de ventes');
+    }
+};
+
+window.generateClientReport = async function() {
+    const selectedCluster = document.getElementById('clientCluster').value;
+    const clientReport = document.getElementById('clientReport');
+
+    try {
+        // Charger les données nécessaires
+        const [clientsResponse, invoicesResponse] = await Promise.all([
+            fetch('/api/clients'),
+            fetch('/api/invoices')
+        ]);
+
+        const clients = await clientsResponse.json();
+        const invoices = await invoicesResponse.json();
+
+        // Filtrer les clients par segment si nécessaire
+        const filteredClients = selectedCluster 
+            ? clients.filter(client => client.cluster === selectedCluster)
+            : clients;
+
+        // Calculer les métriques par client
+        const clientMetrics = filteredClients.map(client => {
+            const clientInvoices = invoices.filter(inv => inv.client_id === client.client_id);
+            const totalSpent = clientInvoices.reduce((sum, inv) => 
+                sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
+            const orderCount = clientInvoices.length;
+            const averageOrderValue = orderCount > 0 ? totalSpent / orderCount : 0;
+
+            return {
+                ...client,
+                totalSpent,
+                orderCount,
+                averageOrderValue
+            };
+        });
+
+        // Calculer les moyennes globales
+        const totalClients = clientMetrics.length;
+        const avgOrdersPerClient = clientMetrics.reduce((sum, c) => sum + c.orderCount, 0) / totalClients || 0;
+        const avgSpentPerClient = clientMetrics.reduce((sum, c) => sum + c.totalSpent, 0) / totalClients || 0;
+
+        // Créer le rapport HTML
+        let reportHtml = `
+            <div class="report-metrics">
+                <div class="metric-card">
+                    <div class="metric-value">${totalClients}</div>
+                    <div class="metric-label">Nombre de Clients</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${avgOrdersPerClient.toFixed(1)}</div>
+                    <div class="metric-label">Commandes Moyennes par Client</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${avgSpentPerClient.toFixed(2).replace('.', ',')} €</div>
+                    <div class="metric-label">Dépense Moyenne par Client</div>
+                </div>
+            </div>
+
+            <h3>Détails des Clients</h3>
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Client ID</th>
+                        <th>Nom</th>
+                        <th>Segment</th>
+                        <th>Nombre de Commandes</th>
+                        <th>Total Dépensé</th>
+                        <th>Panier Moyen</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        clientMetrics.forEach(client => {
+            reportHtml += `
+                <tr>
+                    <td>${client.client_id}</td>
+                    <td>${client.name}</td>
+                    <td>${client.cluster || 'Non défini'}</td>
+                    <td>${client.orderCount}</td>
+                    <td>${client.totalSpent.toFixed(2).replace('.', ',')} €</td>
+                    <td>${client.averageOrderValue.toFixed(2).replace('.', ',')} €</td>
+                </tr>
+            `;
+        });
+
+        reportHtml += `
+                </tbody>
+            </table>
+        `;
+
+        clientReport.innerHTML = reportHtml;
+    } catch (error) {
+        console.error('Erreur lors de la génération du rapport:', error);
+        showError('Erreur lors de la génération du rapport clients');
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     // Navigation
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -46,6 +225,31 @@ document.addEventListener('DOMContentLoaded', () => {
             const dateStart = document.getElementById('searchDateStart').value;
             const dateEnd = document.getElementById('searchDateEnd').value;
             searchInvoices(clientId, dateStart, dateEnd);
+        });
+    }
+
+    // Gestionnaires pour les rapports
+    const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
+    if (generateSalesReportBtn) {
+        generateSalesReportBtn.addEventListener('click', async () => {
+            try {
+                await generateSalesReport();
+            } catch (error) {
+                console.error('Erreur lors de la génération du rapport de ventes:', error);
+                showError('Erreur lors de la génération du rapport de ventes');
+            }
+        });
+    }
+
+    const generateClientReportBtn = document.getElementById('generateClientReportBtn');
+    if (generateClientReportBtn) {
+        generateClientReportBtn.addEventListener('click', async () => {
+            try {
+                await generateClientReport();
+            } catch (error) {
+                console.error('Erreur lors de la génération du rapport clients:', error);
+                showError('Erreur lors de la génération du rapport clients');
+            }
         });
     }
 
@@ -1219,184 +1423,6 @@ function updateAllProductSelectors() {
         select.value = selectedValue; // Restaurer la valeur sélectionnée
         updateProductPrice(select); // Mettre à jour le prix
     });
-}
-
-async function generateSalesReport() {
-    const startDate = document.getElementById('reportDateStart').value;
-    const endDate = document.getElementById('reportDateEnd').value;
-    const salesReport = document.getElementById('salesReport');
-
-    try {
-        // Charger les données nécessaires
-        const [invoicesResponse, productsResponse] = await Promise.all([
-            fetch('/api/invoices'),
-            fetch('/api/products')
-        ]);
-
-        const invoices = await invoicesResponse.json();
-        const products = await productsResponse.json();
-
-        // Filtrer les factures par date
-        const filteredInvoices = invoices.filter(invoice => {
-            const invoiceDate = parseFloat(invoice.invoice_date.toString().replace(',', '.'));
-            const start = startDate ? parseFloat(formatDateToExcel(startDate)) : 0;
-            const end = endDate ? parseFloat(formatDateToExcel(endDate)) : Infinity;
-            return invoiceDate >= start && invoiceDate <= end;
-        });
-
-        // Calculer les métriques
-        const totalSales = filteredInvoices.reduce((sum, inv) => sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
-        const averageOrderValue = totalSales / filteredInvoices.length;
-        const totalOrders = filteredInvoices.length;
-
-        // Créer le rapport HTML
-        let reportHtml = `
-            <div class="report-metrics">
-                <div class="metric-card">
-                    <div class="metric-value">${totalSales.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Ventes Totales</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${totalOrders}</div>
-                    <div class="metric-label">Nombre de Commandes</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${averageOrderValue.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Panier Moyen</div>
-                </div>
-            </div>
-
-            <h3>Détails des Ventes</h3>
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>N° Facture</th>
-                        <th>Client ID</th>
-                        <th>Montant</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        filteredInvoices.forEach(invoice => {
-            reportHtml += `
-                <tr>
-                    <td>${formatDate(invoice.invoice_date)}</td>
-                    <td>${invoice.invoice_number}</td>
-                    <td>${invoice.client_id}</td>
-                    <td>${invoice.total_amount.toString().replace('.', ',')} €</td>
-                </tr>
-            `;
-        });
-
-        reportHtml += `
-                </tbody>
-            </table>
-        `;
-
-        salesReport.innerHTML = reportHtml;
-    } catch (error) {
-        console.error('Erreur lors de la génération du rapport:', error);
-        showError('Erreur lors de la génération du rapport de ventes');
-    }
-}
-
-async function generateClientReport() {
-    const selectedCluster = document.getElementById('clientCluster').value;
-    const clientReport = document.getElementById('clientReport');
-
-    try {
-        // Charger les données nécessaires
-        const [clientsResponse, invoicesResponse] = await Promise.all([
-            fetch('/api/clients'),
-            fetch('/api/invoices')
-        ]);
-
-        const clients = await clientsResponse.json();
-        const invoices = await invoicesResponse.json();
-
-        // Filtrer les clients par segment si nécessaire
-        const filteredClients = selectedCluster 
-            ? clients.filter(client => client.cluster === selectedCluster)
-            : clients;
-
-        // Calculer les métriques par client
-        const clientMetrics = filteredClients.map(client => {
-            const clientInvoices = invoices.filter(inv => inv.client_id === client.client_id);
-            const totalSpent = clientInvoices.reduce((sum, inv) => 
-                sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
-            const orderCount = clientInvoices.length;
-            const averageOrderValue = orderCount > 0 ? totalSpent / orderCount : 0;
-
-            return {
-                ...client,
-                totalSpent,
-                orderCount,
-                averageOrderValue
-            };
-        });
-
-        // Calculer les moyennes globales
-        const totalClients = clientMetrics.length;
-        const avgOrdersPerClient = clientMetrics.reduce((sum, c) => sum + c.orderCount, 0) / totalClients;
-        const avgSpentPerClient = clientMetrics.reduce((sum, c) => sum + c.totalSpent, 0) / totalClients;
-
-        // Créer le rapport HTML
-        let reportHtml = `
-            <div class="report-metrics">
-                <div class="metric-card">
-                    <div class="metric-value">${totalClients}</div>
-                    <div class="metric-label">Nombre de Clients</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${avgOrdersPerClient.toFixed(1)}</div>
-                    <div class="metric-label">Commandes Moyennes par Client</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${avgSpentPerClient.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Dépense Moyenne par Client</div>
-                </div>
-            </div>
-
-            <h3>Détails des Clients</h3>
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Client ID</th>
-                        <th>Nom</th>
-                        <th>Segment</th>
-                        <th>Nombre de Commandes</th>
-                        <th>Total Dépensé</th>
-                        <th>Panier Moyen</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        clientMetrics.forEach(client => {
-            reportHtml += `
-                <tr>
-                    <td>${client.client_id}</td>
-                    <td>${client.name}</td>
-                    <td>${client.cluster || 'Non défini'}</td>
-                    <td>${client.orderCount}</td>
-                    <td>${client.totalSpent.toFixed(2).replace('.', ',')} €</td>
-                    <td>${client.averageOrderValue.toFixed(2).replace('.', ',')} €</td>
-                </tr>
-            `;
-        });
-
-        reportHtml += `
-                </tbody>
-            </table>
-        `;
-
-        clientReport.innerHTML = reportHtml;
-    } catch (error) {
-        console.error('Erreur lors de la génération du rapport:', error);
-        showError('Erreur lors de la génération du rapport clients');
-    }
 }
 
 function formatDateToExcel(dateString) {

@@ -12,6 +12,7 @@
             <a href="#" class="nav-link active" data-page="invoices">Factures</a>
             <a href="#" class="nav-link" data-page="clients">Clients</a>
             <a href="#" class="nav-link" data-page="products">Produits</a>
+            <a href="#" class="nav-link" data-page="reports">Rapports</a>
         </div>
     </nav>
 
@@ -166,6 +167,46 @@
                             <button type="button" onclick="hideAddProductForm()">Annuler</button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page Rapports -->
+        <div id="reportsPage" class="page">
+            <h1>Rapports</h1>
+            <div class="reports-container">
+                <div class="report-section">
+                    <h2>Rapports de Ventes</h2>
+                    <div class="report-filters">
+                        <div class="form-group">
+                            <label for="reportDateStart">Date de début:</label>
+                            <input type="date" id="reportDateStart">
+                        </div>
+                        <div class="form-group">
+                            <label for="reportDateEnd">Date de fin:</label>
+                            <input type="date" id="reportDateEnd">
+                        </div>
+                        <button onclick="generateSalesReport()">Générer Rapport de Ventes</button>
+                    </div>
+                    <div id="salesReport" class="report-content"></div>
+                </div>
+
+                <div class="report-section">
+                    <h2>Rapports Clients</h2>
+                    <div class="report-filters">
+                        <div class="form-group">
+                            <label for="clientCluster">Segment Client:</label>
+                            <select id="clientCluster">
+                                <option value="">Tous les segments</option>
+                                <option value="Clients Fidèles et Actifs">Clients Fidèles et Actifs</option>
+                                <option value="Clients Économes Réguliers">Clients Économes Réguliers</option>
+                                <option value="Nouveaux Clients Explorateurs">Nouveaux Clients Explorateurs</option>
+                                <option value="Clients Occasionnels Réactifs">Clients Occasionnels Réactifs</option>
+                            </select>
+                        </div>
+                        <button onclick="generateClientReport()">Générer Rapport Clients</button>
+                    </div>
+                    <div id="clientReport" class="report-content"></div>
                 </div>
             </div>
         </div>

@@ -1,10 +1,9 @@
 // Fonctions de génération de rapports
 window.generateSalesReport = async function() {
-    const startDate = document.getElementById('reportDateStart').value;
-    const endDate = document.getElementById('reportDateEnd').value;
-    const salesReport = document.getElementById('salesReport');
-
     try {
+        const startDate = document.getElementById('reportDateStart').value;
+        const endDate = document.getElementById('reportDateEnd').value;
+        
         // Charger les données nécessaires
         const [invoicesResponse, productsResponse] = await Promise.all([
             fetch('/api/invoices'),
@@ -15,76 +14,108 @@ window.generateSalesReport = async function() {
         const products = await productsResponse.json();
 
         // Filtrer les factures par date
-        const filteredInvoices = invoices.filter(invoice => {
+        salesData = invoices.filter(invoice => {
             const invoiceDate = parseFloat(invoice.invoice_date.toString().replace(',', '.'));
             const start = startDate ? parseFloat(formatDateToExcel(startDate)) : 0;
             const end = endDate ? parseFloat(formatDateToExcel(endDate)) : Infinity;
             return invoiceDate >= start && invoiceDate <= end;
         });
 
-        // Calculer les métriques
-        const totalSales = filteredInvoices.reduce((sum, inv) => sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
-        const averageOrderValue = totalSales / filteredInvoices.length || 0;
-        const totalOrders = filteredInvoices.length;
-
-        // Créer le rapport HTML
-        let reportHtml = `
-            <div class="report-metrics">
-                <div class="metric-card">
-                    <div class="metric-value">${totalSales.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Ventes Totales</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${totalOrders}</div>
-                    <div class="metric-label">Nombre de Commandes</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${averageOrderValue.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Panier Moyen</div>
-                </div>
-            </div>
-
-            <h3>Détails des Ventes</h3>
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>N° Facture</th>
-                        <th>Client ID</th>
-                        <th>Montant</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        filteredInvoices.forEach(invoice => {
-            reportHtml += `
-                <tr>
-                    <td>${formatDate(invoice.invoice_date)}</td>
-                    <td>${invoice.invoice_number}</td>
-                    <td>${invoice.client_id}</td>
-                    <td>${invoice.total_amount.toString().replace('.', ',')} €</td>
-                </tr>
-            `;
-        });
-
-        reportHtml += `
-                </tbody>
-            </table>
-        `;
-
-        salesReport.innerHTML = reportHtml;
+        // Réinitialiser la page courante et afficher la première page
+        currentSalesPage = 1;
+        displaySalesReport(currentSalesPage);
     } catch (error) {
         console.error('Erreur lors de la génération du rapport:', error);
         showError('Erreur lors de la génération du rapport de ventes');
     }
 };
 
-window.generateClientReport = async function() {
-    const selectedCluster = document.getElementById('clientCluster').value;
-    const clientReport = document.getElementById('clientReport');
+function displaySalesReport(page) {
+    const salesReport = document.getElementById('salesReport');
+    const start = (page - 1) * itemsPerReportPage;
+    const end = start + itemsPerReportPage;
+    const paginatedData = salesData.slice(start, end);
 
+    // Calculer les métriques
+    const totalSales = salesData.reduce((sum, inv) => sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
+    const averageOrderValue = totalSales / salesData.length || 0;
+    const totalOrders = salesData.length;
+
+    let reportHtml = `
+        <div class="report-metrics">
+            <div class="metric-card">
+                <div class="metric-value">${totalSales.toFixed(2).replace('.', ',')} €</div>
+                <div class="metric-label">Ventes Totales</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">${totalOrders}</div>
+                <div class="metric-label">Nombre de Commandes</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">${averageOrderValue.toFixed(2).replace('.', ',')} €</div>
+                <div class="metric-label">Panier Moyen</div>
+            </div>
+        </div>
+
+        <h3>Détails des Ventes</h3>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>N° Facture</th>
+                    <th>Client ID</th>
+                    <th>Montant</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    paginatedData.forEach(invoice => {
+        reportHtml += `
+            <tr>
+                <td>${formatDate(invoice.invoice_date)}</td>
+                <td>${invoice.invoice_number}</td>
+                <td>${invoice.client_id}</td>
+                <td>${invoice.total_amount.toString().replace('.', ',')} €</td>
+            </tr>
+        `;
+    });
+
+    reportHtml += `
+            </tbody>
+        </table>
+        <div class="pagination">
+            <button onclick="changeSalesReportPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>Précédent</button>
+            <div class="pagination-center">
+                <span>Page </span>
+                <input type="number" min="1" max="${Math.ceil(salesData.length / itemsPerReportPage)}" value="${page}" class="page-input" />
+                <span> sur ${Math.ceil(salesData.length / itemsPerReportPage)}</span>
+            </div>
+            <button onclick="changeSalesReportPage(${page + 1})" ${end >= salesData.length ? 'disabled' : ''}>Suivant</button>
+        </div>
+    `;
+
+    salesReport.innerHTML = reportHtml;
+
+    // Ajouter l'événement pour le champ de saisie de page
+    const pageInput = salesReport.querySelector('.page-input');
+    if (pageInput) {
+        pageInput.addEventListener('change', (e) => {
+            const newPage = parseInt(e.target.value);
+            if (newPage >= 1 && newPage <= Math.ceil(salesData.length / itemsPerReportPage)) {
+                changeSalesReportPage(newPage);
+            } else {
+                e.target.value = currentSalesPage;
+                showError('Numéro de page invalide');
+            }
+        });
+    }
+}
+
+window.generateClientReport = async function() {
     try {
+        const selectedCluster = document.getElementById('clientCluster').value;
+        
         // Charger les données nécessaires
         const [clientsResponse, invoicesResponse] = await Promise.all([
             fetch('/api/clients'),
@@ -95,12 +126,12 @@ window.generateClientReport = async function() {
         const invoices = await invoicesResponse.json();
 
         // Filtrer les clients par segment si nécessaire
-        const filteredClients = selectedCluster 
+        clientReportData = selectedCluster 
             ? clients.filter(client => client.cluster === selectedCluster)
             : clients;
 
         // Calculer les métriques par client
-        const clientMetrics = filteredClients.map(client => {
+        clientReportData = clientReportData.map(client => {
             const clientInvoices = invoices.filter(inv => inv.client_id === client.client_id);
             const totalSpent = clientInvoices.reduce((sum, inv) => 
                 sum + parseFloat(inv.total_amount.toString().replace(',', '.')), 0);
@@ -115,67 +146,100 @@ window.generateClientReport = async function() {
             };
         });
 
-        // Calculer les moyennes globales
-        const totalClients = clientMetrics.length;
-        const avgOrdersPerClient = clientMetrics.reduce((sum, c) => sum + c.orderCount, 0) / totalClients || 0;
-        const avgSpentPerClient = clientMetrics.reduce((sum, c) => sum + c.totalSpent, 0) / totalClients || 0;
-
-        // Créer le rapport HTML
-        let reportHtml = `
-            <div class="report-metrics">
-                <div class="metric-card">
-                    <div class="metric-value">${totalClients}</div>
-                    <div class="metric-label">Nombre de Clients</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${avgOrdersPerClient.toFixed(1)}</div>
-                    <div class="metric-label">Commandes Moyennes par Client</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${avgSpentPerClient.toFixed(2).replace('.', ',')} €</div>
-                    <div class="metric-label">Dépense Moyenne par Client</div>
-                </div>
-            </div>
-
-            <h3>Détails des Clients</h3>
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Client ID</th>
-                        <th>Nom</th>
-                        <th>Segment</th>
-                        <th>Nombre de Commandes</th>
-                        <th>Total Dépensé</th>
-                        <th>Panier Moyen</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        clientMetrics.forEach(client => {
-            reportHtml += `
-                <tr>
-                    <td>${client.client_id}</td>
-                    <td>${client.name}</td>
-                    <td>${client.cluster || 'Non défini'}</td>
-                    <td>${client.orderCount}</td>
-                    <td>${client.totalSpent.toFixed(2).replace('.', ',')} €</td>
-                    <td>${client.averageOrderValue.toFixed(2).replace('.', ',')} €</td>
-                </tr>
-            `;
-        });
-
-        reportHtml += `
-                </tbody>
-            </table>
-        `;
-
-        clientReport.innerHTML = reportHtml;
+        // Réinitialiser la page courante et afficher la première page
+        currentClientReportPage = 1;
+        displayClientReport(currentClientReportPage);
     } catch (error) {
         console.error('Erreur lors de la génération du rapport:', error);
         showError('Erreur lors de la génération du rapport clients');
     }
 };
+
+function displayClientReport(page) {
+    const clientReport = document.getElementById('clientReport');
+    const start = (page - 1) * itemsPerReportPage;
+    const end = start + itemsPerReportPage;
+    const paginatedData = clientReportData.slice(start, end);
+
+    // Calculer les moyennes globales
+    const totalClients = clientReportData.length;
+    const avgOrdersPerClient = clientReportData.reduce((sum, c) => sum + c.orderCount, 0) / totalClients || 0;
+    const avgSpentPerClient = clientReportData.reduce((sum, c) => sum + c.totalSpent, 0) / totalClients || 0;
+
+    let reportHtml = `
+        <div class="report-metrics">
+            <div class="metric-card">
+                <div class="metric-value">${totalClients}</div>
+                <div class="metric-label">Nombre de Clients</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">${avgOrdersPerClient.toFixed(1)}</div>
+                <div class="metric-label">Commandes Moyennes par Client</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">${avgSpentPerClient.toFixed(2).replace('.', ',')} €</div>
+                <div class="metric-label">Dépense Moyenne par Client</div>
+            </div>
+        </div>
+
+        <h3>Détails des Clients</h3>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Client ID</th>
+                    <th>Nom</th>
+                    <th>Segment</th>
+                    <th>Nombre de Commandes</th>
+                    <th>Total Dépensé</th>
+                    <th>Panier Moyen</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    paginatedData.forEach(client => {
+        reportHtml += `
+            <tr>
+                <td>${client.client_id}</td>
+                <td>${client.name}</td>
+                <td>${client.cluster || 'Non défini'}</td>
+                <td>${client.orderCount}</td>
+                <td>${client.totalSpent.toFixed(2).replace('.', ',')} €</td>
+                <td>${client.averageOrderValue.toFixed(2).replace('.', ',')} €</td>
+            </tr>
+        `;
+    });
+
+    reportHtml += `
+            </tbody>
+        </table>
+        <div class="pagination">
+            <button onclick="changeClientReportPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>Précédent</button>
+            <div class="pagination-center">
+                <span>Page </span>
+                <input type="number" min="1" max="${Math.ceil(clientReportData.length / itemsPerReportPage)}" value="${page}" class="page-input" />
+                <span> sur ${Math.ceil(clientReportData.length / itemsPerReportPage)}</span>
+            </div>
+            <button onclick="changeClientReportPage(${page + 1})" ${end >= clientReportData.length ? 'disabled' : ''}>Suivant</button>
+        </div>
+    `;
+
+    clientReport.innerHTML = reportHtml;
+
+    // Ajouter l'événement pour le champ de saisie de page
+    const pageInput = clientReport.querySelector('.page-input');
+    if (pageInput) {
+        pageInput.addEventListener('change', (e) => {
+            const newPage = parseInt(e.target.value);
+            if (newPage >= 1 && newPage <= Math.ceil(clientReportData.length / itemsPerReportPage)) {
+                changeClientReportPage(newPage);
+            } else {
+                e.target.value = currentClientReportPage;
+                showError('Numéro de page invalide');
+            }
+        });
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // Navigation
@@ -1431,4 +1495,25 @@ function formatDateToExcel(dateString) {
     const diffTime = Math.abs(date - startDate);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return (diffDays + 1).toString();
+}
+
+// Variables pour la pagination des rapports
+let currentSalesPage = 1;
+let currentClientReportPage = 1;
+const itemsPerReportPage = 10;
+let salesData = [];
+let clientReportData = [];
+
+function changeSalesReportPage(newPage) {
+    if (newPage >= 1 && newPage <= Math.ceil(salesData.length / itemsPerReportPage)) {
+        currentSalesPage = newPage;
+        displaySalesReport(currentSalesPage);
+    }
+}
+
+function changeClientReportPage(newPage) {
+    if (newPage >= 1 && newPage <= Math.ceil(clientReportData.length / itemsPerReportPage)) {
+        currentClientReportPage = newPage;
+        displayClientReport(currentClientReportPage);
+    }
 } 
